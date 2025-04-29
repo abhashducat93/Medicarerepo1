@@ -109,3 +109,84 @@ npm run both
 ## Contributing
 
 We welcome contributions to MedicareProject! If you'd like to contribute
+
+
+
+
+
+
+The 404 error when running your Dockerized React app typically occurs because Nginx can't find the `index.html` file in the expected location. Let's fix this by ensuring the build files are correctly copied and Nginx is properly configured.
+
+Here's an updated Dockerfile that should resolve the issue:
+
+```dockerfile
+# Stage 1: Build the React application
+FROM node:18-alpine AS builder
+
+WORKDIR /app
+
+# Copy package files first to leverage Docker cache
+COPY client/package.json client/package-lock.json ./
+
+# Install dependencies
+RUN npm install
+
+# Copy the rest of the application files
+COPY client/ ./
+
+# Build the application (assuming you're using create-react-app)
+RUN npm run build
+
+# Stage 2: Serve the application using Nginx
+FROM nginx:alpine
+
+# Remove default Nginx configuration
+RUN rm -rf /etc/nginx/conf.d/default.conf
+
+# Copy custom Nginx configuration
+COPY client/nginx.conf /etc/nginx/conf.d
+
+# Copy the built app from the builder stage to Nginx
+COPY --from=builder /app/build /usr/share/nginx/html
+
+# Expose port 80
+EXPOSE 80
+
+# Start Nginx
+CMD ["nginx", "-g", "daemon off;"]
+```
+
+You'll also need to create an `nginx.conf` file in your `client/` directory with this content:
+
+```nginx
+server {
+    listen 80;
+    server_name localhost;
+    
+    location / {
+        root /usr/share/nginx/html;
+        index index.html index.htm;
+        try_files $uri $uri/ /index.html;
+    }
+
+    error_page 500 502 503 504 /50x.html;
+    location = /50x.html {
+        root /usr/share/nginx/html;
+    }
+}
+```
+
+### Key Fixes:
+1. **Added proper Nginx configuration** - The default Nginx config might not handle React Router properly
+2. **Explicit try_files directive** - Ensures all routes fall back to index.html (important for client-side routing)
+3. **Removed default config** - Prevents conflicts with our custom configuration
+
+### Steps to implement:
+1. Create the `nginx.conf` file in your `client/` directory
+2. Rebuild your Docker image: `docker build -t medicare-client .`
+3. Run the container: `docker run -p 3000:80 medicare-client`
+
+This should now serve your React application properly, including support for client-side routing. If you're still seeing issues, you might want to:
+1. Verify the build output exists in `/app/build` after the build stage
+2. Check that your React app's `package.json` has the correct build script
+3. Ensure your base route in React Router matches the Nginx configuration
